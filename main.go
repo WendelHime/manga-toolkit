@@ -58,6 +58,7 @@ func main() {
 		}
 
 		m := pdf.NewMaroto(consts.Portrait, consts.A5)
+		m.SetPageMargins(0, 0, 0)
 		imgs, err := GetImagesFromZip(path)
 		if err != nil {
 			return err
@@ -90,15 +91,25 @@ func main() {
 
 			//imgB64 := "data:image/jpeg;base64,"
 			imgB64 := base64.StdEncoding.EncodeToString(byteBuffer.Bytes())
-			m.Row(175, func() {
-				m.Col(0, func() {
-					err = m.Base64Image(imgB64, consts.Jpg, props.Rect{Center: true, Percent: 100})
+			m.Row(210, func() {
+				m.Col(148, func() {
+					err = m.Base64Image(imgB64, consts.Jpg, props.Rect{
+						Left:    0.0,
+						Top:     0.0,
+						Percent: 100,
+						Center:  false,
+					})
 					if err != nil {
 						log.Fatal(err)
 					}
 
 				})
 			})
+
+			left, top, right, bottom := m.GetPageMargins()
+			width, height := m.GetPageSize()
+			log.Printf("page margins - left: %.2f top: %.2f right: %.2f bottom: %.2f ", left, top, right, bottom)
+			log.Printf("page size - width: %.2f, height: %.2f", width, height)
 			m.AddPage()
 			log.Printf("current page %d", m.GetCurrentPage())
 
