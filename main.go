@@ -3,7 +3,6 @@ package main
 import (
 	"archive/zip"
 	"bytes"
-	"encoding/base64"
 	"flag"
 	"fmt"
 	"io"
@@ -16,9 +15,7 @@ import (
 	"strings"
 
 	"github.com/disintegration/imaging"
-	"github.com/johnfercher/maroto/pkg/consts"
-	"github.com/johnfercher/maroto/pkg/pdf"
-	"github.com/johnfercher/maroto/pkg/props"
+	"github.com/go-pdf/fpdf"
 )
 
 func main() {
@@ -41,14 +38,13 @@ func main() {
 	flag.Parse()
 
 	err := filepath.Walk(inputDir, func(path string, info fs.FileInfo, err error) error {
-		fmt.Println(path, info.IsDir(), info.Name())
 		if err != nil {
 			log.Printf("failure when accessing input dir: %v", err)
 			return err
 		}
 
 		if info.IsDir() {
-			log.Println("skipping dir")
+			log.Println("skipping dir", path)
 			return nil
 		}
 
@@ -57,30 +53,25 @@ func main() {
 			return fmt.Errorf("[%s] is not a zip file", filename)
 		}
 
-		m := pdf.NewMaroto(consts.Portrait, consts.A5)
-		m.SetPageMargins(0, 0, 0)
+		pdf := fpdf.New(fpdf.OrientationPortrait, fpdf.UnitMillimeter, fpdf.PageSizeA5, "")
 		imgs, err := GetImagesFromZip(path)
 		if err != nil {
 			return err
 		}
 
 		sort.Slice(imgs, func(i, j int) bool {
-			log.Println(imgs[i].Index, imgs[j].Index)
 			return imgs[i].Index < imgs[j].Index
 		})
 
-		for _, jpg := range imgs {
+		for i, jpg := range imgs {
 			img, err := imaging.Decode(jpg.Content, imaging.AutoOrientation(true))
 			if err != nil {
 				return err
 			}
 
-			log.Printf("img %s bounds: %+v", jpg.FileInfo.Name(), img.Bounds())
-
 			// image in landscape we need to rotate
 			if img.Bounds().Max.X > img.Bounds().Max.Y {
 				img = imaging.Rotate270(img)
-				log.Printf("rotated img %s bounds: %+v", jpg.FileInfo.Name(), img.Bounds())
 			}
 
 			var byteBuffer bytes.Buffer
@@ -89,38 +80,23 @@ func main() {
 				return err
 			}
 
-			//imgB64 := "data:image/jpeg;base64,"
-			imgB64 := base64.StdEncoding.EncodeToString(byteBuffer.Bytes())
-			m.Row(210, func() {
-				m.Col(148, func() {
-					err = m.Base64Image(imgB64, consts.Jpg, props.Rect{
-						Left:    0.0,
-						Top:     0.0,
-						Percent: 100,
-						Center:  false,
-					})
-					if err != nil {
-						log.Fatal(err)
-					}
-
-				})
-			})
-
-			left, top, right, bottom := m.GetPageMargins()
-			width, height := m.GetPageSize()
-			log.Printf("page margins - left: %.2f top: %.2f right: %.2f bottom: %.2f ", left, top, right, bottom)
-			log.Printf("page size - width: %.2f, height: %.2f", width, height)
-			m.AddPage()
-			log.Printf("current page %d", m.GetCurrentPage())
-
+			opt := fpdf.ImageOptions{
+				ImageType:             "jpg",
+				AllowNegativePosition: false,
+			}
+			name := strconv.Itoa(i)
+			pdf.RegisterImageOptionsReader(name, opt, &byteBuffer)
+			pdf.AddPage()
+			wd, hd, _ := pdf.PageSize(i)
 			jpg.Content.Close()
+			pdf.ImageOptions(name, 0, 0, wd, hd, false, opt, 0, "")
 		}
 
 		ext := filepath.Ext(filename)
 		outputFile := fmt.Sprintf("%s.pdf", strings.TrimSuffix(filename, ext))
 		log.Printf("output path: %s", outputFile)
 
-		return m.OutputFileAndClose(filepath.Join(outputDir, outputFile))
+		return pdf.OutputFileAndClose(filepath.Join(outputDir, outputFile))
 	})
 	if err != nil {
 		log.Fatal(err)
@@ -153,7 +129,6 @@ func GetImagesFromZip(source string) ([]Image, error) {
 		ext := filepath.Ext(imgName)
 		imgName = strings.TrimSuffix(imgName, ext)
 		imgNameSplited := strings.Split(imgName, "_")
-		log.Println(imgNameSplited)
 		img := Image{
 			Content:  content,
 			FileInfo: f.FileInfo(),
