@@ -2,6 +2,8 @@ package logic
 
 import (
 	"archive/zip"
+	"bufio"
+	"bytes"
 	"fmt"
 	"image"
 	"image/jpeg"
@@ -48,63 +50,63 @@ func TestGeneratePDFFromZip(t *testing.T) {
 			})
 		}
 	})
+
+	createValidZipfile := func(t *testing.T) string {
+		file, err := ioutil.TempFile("/tmp/", "valid-*.zip")
+		assert.NoError(t, err)
+		defer file.Close()
+
+		zipWriter := zip.NewWriter(file)
+		defer zipWriter.Close()
+
+		for i := 0; i < 10; i++ {
+			img := image.NewNRGBA(image.Rect(0, 0, 10, 10))
+
+			w, err := zipWriter.Create(fmt.Sprintf("%d.jpg", i))
+			assert.NoError(t, err)
+
+			jpeg.Encode(w, img, &jpeg.Options{Quality: 90})
+		}
+
+		return file.Name()
+	}
+
+	createZipWithInvalidFileExt := func(t *testing.T) string {
+		file, err := ioutil.TempFile("/tmp/", "invalid-ext-*.zip")
+		assert.NoError(t, err)
+		defer file.Close()
+
+		zipWriter := zip.NewWriter(file)
+		defer zipWriter.Close()
+
+		img := image.NewNRGBA(image.Rect(0, 0, 10, 10))
+
+		w, err := zipWriter.Create(fmt.Sprintf("%d.random", 0))
+		assert.NoError(t, err)
+
+		jpeg.Encode(w, img, &jpeg.Options{Quality: 90})
+
+		return file.Name()
+	}
+
+	createZipWithoutIndexOnFilename := func(t *testing.T) string {
+		file, err := ioutil.TempFile("/tmp/", "invalid-filename-*.zip")
+		assert.NoError(t, err)
+		defer file.Close()
+
+		zipWriter := zip.NewWriter(file)
+		defer zipWriter.Close()
+
+		img := image.NewNRGBA(image.Rect(0, 0, 10, 10))
+
+		w, err := zipWriter.Create("random.jpg")
+		assert.NoError(t, err)
+
+		jpeg.Encode(w, img, &jpeg.Options{Quality: 90})
+
+		return file.Name()
+	}
 	t.Run("NewChapter", func(t *testing.T) {
-		createValidZipfile := func(t *testing.T) string {
-			file, err := ioutil.TempFile("/tmp/", "valid-*.zip")
-			assert.NoError(t, err)
-			defer file.Close()
-
-			zipWriter := zip.NewWriter(file)
-			defer zipWriter.Close()
-
-			for i := 0; i < 10; i++ {
-				img := image.NewNRGBA(image.Rect(0, 0, 10, 10))
-
-				w, err := zipWriter.Create(fmt.Sprintf("%d.jpg", i))
-				assert.NoError(t, err)
-
-				jpeg.Encode(w, img, &jpeg.Options{Quality: 90})
-			}
-
-			return file.Name()
-		}
-
-		createZipWithInvalidFileExt := func(t *testing.T) string {
-			file, err := ioutil.TempFile("/tmp/", "invalid-ext-*.zip")
-			assert.NoError(t, err)
-			defer file.Close()
-
-			zipWriter := zip.NewWriter(file)
-			defer zipWriter.Close()
-
-			img := image.NewNRGBA(image.Rect(0, 0, 10, 10))
-
-			w, err := zipWriter.Create(fmt.Sprintf("%d.random", 0))
-			assert.NoError(t, err)
-
-			jpeg.Encode(w, img, &jpeg.Options{Quality: 90})
-
-			return file.Name()
-		}
-
-		createZipWithoutIndexOnFilename := func(t *testing.T) string {
-			file, err := ioutil.TempFile("/tmp/", "invalid-filename-*.zip")
-			assert.NoError(t, err)
-			defer file.Close()
-
-			zipWriter := zip.NewWriter(file)
-			defer zipWriter.Close()
-
-			img := image.NewNRGBA(image.Rect(0, 0, 10, 10))
-
-			w, err := zipWriter.Create("random.jpg")
-			assert.NoError(t, err)
-
-			jpeg.Encode(w, img, &jpeg.Options{Quality: 90})
-
-			return file.Name()
-		}
-
 		var tests = []struct {
 			name   string
 			setup  func(t *testing.T) (r *zip.ReadCloser, zipname string)
@@ -175,13 +177,13 @@ func TestGeneratePDFFromZip(t *testing.T) {
 		l := NewLogic()
 		var tests = []struct {
 			name   string
-			setup  func(t *testing.T) (*zip.ReadCloser, io.WriteCloser)
+			setup  func(t *testing.T) (*zip.ReadCloser, io.WriteCloser, string)
 			assert func(t *testing.T, gotErr error)
 		}{
 			{
 				name: "should return error when reader is nil",
-				setup: func(t *testing.T) (*zip.ReadCloser, io.WriteCloser) {
-					return nil, nil
+				setup: func(t *testing.T) (*zip.ReadCloser, io.WriteCloser, string) {
+					return nil, nil, ""
 				},
 				assert: func(t *testing.T, gotErr error) {
 					assert.Error(t, gotErr)
@@ -189,8 +191,23 @@ func TestGeneratePDFFromZip(t *testing.T) {
 			},
 			{
 				name: "should return error when output is nil",
-				setup: func(t *testing.T) (*zip.ReadCloser, io.WriteCloser) {
-					return new(zip.ReadCloser), nil
+				setup: func(t *testing.T) (*zip.ReadCloser, io.WriteCloser, string) {
+					return new(zip.ReadCloser), nil, ""
+				},
+				assert: func(t *testing.T, gotErr error) {
+					assert.Error(t, gotErr)
+				},
+			},
+			{
+				name: "should return error if there's anything wrong with the zip content",
+				setup: func(t *testing.T) (*zip.ReadCloser, io.WriteCloser, string) {
+					zipname := createZipWithInvalidFileExt(t)
+					r, err := zip.OpenReader(zipname)
+					assert.NoError(t, err)
+					buffer := new(bytes.Buffer)
+					bw := bufio.NewWriter(buffer)
+					wc := &WC{bw}
+					return r, wc, zipname
 				},
 				assert: func(t *testing.T, gotErr error) {
 					assert.Error(t, gotErr)
@@ -199,10 +216,29 @@ func TestGeneratePDFFromZip(t *testing.T) {
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				input, output := tt.setup(t)
+				input, output, zipname := tt.setup(t)
+				defer func() {
+					if input != nil {
+						input.Close()
+					}
+					if output != nil {
+						output.Close()
+					}
+					if zipname != "" {
+						os.Remove(zipname)
+					}
+				}()
 				err := l.GeneratePDFFromZip(input, output)
 				tt.assert(t, err)
 			})
 		}
 	})
+}
+
+type WC struct {
+	*bufio.Writer
+}
+
+func (wc *WC) Close() error {
+	return nil
 }
