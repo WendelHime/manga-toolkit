@@ -40,7 +40,7 @@ func (logic) GeneratePDFFromZip(reader *zip.ReadCloser, output io.WriteCloser) e
 func GenerateOutput(chapter Chapter, output io.WriteCloser) error {
 	pdf := fpdf.New(fpdf.OrientationPortrait, fpdf.UnitMillimeter, fpdf.PageSizeA5, "")
 
-	chapter.ForeachPage(func(page Page) error {
+	err := chapter.ForeachPage(func(page Page) error {
 		buffer := new(bytes.Buffer)
 		EncodePage(page, buffer)
 		page.Content.Close()
@@ -53,6 +53,10 @@ func GenerateOutput(chapter Chapter, output io.WriteCloser) error {
 		AddPage(pdf, imgType, buffer)
 		return nil
 	})
+
+	if err != nil {
+		return err
+	}
 
 	return pdf.OutputAndClose(output)
 }

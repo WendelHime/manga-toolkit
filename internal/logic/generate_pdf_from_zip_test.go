@@ -60,7 +60,7 @@ func TestGeneratePDFFromZip(t *testing.T) {
 		defer zipWriter.Close()
 
 		for i := 0; i < 10; i++ {
-			img := image.NewNRGBA(image.Rect(0, 0, 10, 10))
+			img := image.NewNRGBA(image.Rect(0, 0, 20, 10))
 
 			w, err := zipWriter.Create(fmt.Sprintf("%d.jpg", i))
 			assert.NoError(t, err)
@@ -138,7 +138,7 @@ func TestGeneratePDFFromZip(t *testing.T) {
 					for i := 0; i < 10; i++ {
 						assert.Equal(t, i, gotChapter.Pages[i].PageNumber)
 						assert.Equal(t, fmt.Sprintf("%d.jpg", i), gotChapter.Pages[i].FileInfo.Name())
-						img := image.NewNRGBA(image.Rect(0, 0, 10, 10))
+						img := image.NewNRGBA(image.Rect(0, 0, 20, 10))
 						gotImg, err := jpeg.Decode(gotChapter.Pages[i].Content)
 						assert.NoError(t, err)
 						assert.Equal(t, img.Bounds(), gotImg.Bounds())
@@ -234,6 +234,21 @@ func TestGeneratePDFFromZip(t *testing.T) {
 				},
 				assert: func(t *testing.T, gotErr error) {
 					assert.Error(t, gotErr)
+				},
+			},
+			{
+				name: "should create PDF with success",
+				setup: func(t *testing.T) (*zip.ReadCloser, io.WriteCloser, string) {
+					zipname := createValidZipfile(t)
+					r, err := zip.OpenReader(zipname)
+					assert.NoError(t, err)
+					buffer := new(bytes.Buffer)
+					bw := bufio.NewWriter(buffer)
+					wc := &WC{bw}
+					return r, wc, zipname
+				},
+				assert: func(t *testing.T, gotErr error) {
+					assert.NoError(t, gotErr)
 				},
 			},
 		}
