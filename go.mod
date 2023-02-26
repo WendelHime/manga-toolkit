@@ -1,4 +1,4 @@
-module github.com/WendelHime/mangaimgstopdf
+module github.com/WendelHime/manga-toolkit
 
 go 1.18
 
