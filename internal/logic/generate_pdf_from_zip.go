@@ -3,6 +3,7 @@ package logic
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -11,36 +12,47 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/disintegration/imaging"
 	"github.com/go-pdf/fpdf"
 	"github.com/google/uuid"
+	"golang.org/x/sync/errgroup"
 )
 
 func (logic) GeneratePDFFromZip(reader *zip.ReadCloser, output io.WriteCloser) error {
-	imgs, err := GetImagesFromZip(reader)
+	if reader == nil {
+		return errors.New("missing reader")
+	}
+	if output == nil {
+		return errors.New("missing output")
+	}
+
+	chapter, err := NewChapter(reader)
 	if err != nil {
 		return err
 	}
+	chapter.SortPages()
 
-	sort.Slice(imgs, func(i, j int) bool {
-		return imgs[i].PageNumber < imgs[j].PageNumber
-	})
+	return GenerateOutput(chapter, output)
+}
 
+func GenerateOutput(chapter Chapter, output io.WriteCloser) error {
 	pdf := fpdf.New(fpdf.OrientationPortrait, fpdf.UnitMillimeter, fpdf.PageSizeA5, "")
 
-	for _, img := range imgs {
+	chapter.ForeachPage(func(page Page) error {
 		buffer := new(bytes.Buffer)
-		EncodeImage(img, buffer)
-		img.Content.Close()
+		EncodePage(page, buffer)
+		page.Content.Close()
 
-		imgType, err := GetImageFormat(img)
+		imgType, err := GetImageFormat(page)
 		if err != nil {
 			return err
 		}
 
 		AddPage(pdf, imgType, buffer)
-	}
+		return nil
+	})
 
 	return pdf.OutputAndClose(output)
 }
@@ -62,7 +74,7 @@ func AddPage(pdf fpdf.Pdf, imgType string, buffer *bytes.Buffer) {
 }
 
 // GetImageFormat extracts the image format from the manga image page
-func GetImageFormat(image MangaImagePage) (string, error) {
+func GetImageFormat(image Page) (string, error) {
 	format, err := imaging.FormatFromFilename(image.FileInfo.Name())
 	if err != nil {
 		return "", err
@@ -70,10 +82,10 @@ func GetImageFormat(image MangaImagePage) (string, error) {
 	return format.String(), nil
 }
 
-// EncodeImage encode a manga image page into the provided buffer
+// EncodePage encode a manga image page into the provided buffer
 // If the page is on landscape mode it'll be rotated -90 degrees and will became
 // portrait mode
-func EncodeImage(image MangaImagePage, buffer *bytes.Buffer) error {
+func EncodePage(image Page, buffer *bytes.Buffer) error {
 	format, err := imaging.FormatFromFilename(image.FileInfo.Name())
 	if err != nil {
 		return err
@@ -104,48 +116,72 @@ func EncodeImage(image MangaImagePage, buffer *bytes.Buffer) error {
 	return nil
 }
 
-// MangaImagePage represents a manga image page
-type MangaImagePage struct {
+type Chapter struct {
+	Pages []Page
+}
+
+// Page represents a manga image page
+type Page struct {
 	Content    io.ReadCloser
 	FileInfo   fs.FileInfo
 	PageNumber int
 }
 
-// GetImagesFromZip iterate through the ZIP file, open the content and return
+func (c Chapter) SortPages() {
+	sort.Slice(c.Pages, func(i, j int) bool {
+		return c.Pages[i].PageNumber < c.Pages[j].PageNumber
+	})
+}
+
+func (c Chapter) ForeachPage(do func(page Page) error) error {
+	var err error
+	for _, page := range c.Pages {
+		errors.Join(err, do(page))
+	}
+	return err
+}
+
+// NewChapter iterate through the ZIP file, open the content and return
 // a list of images. Remember to close the images after using it!
-func GetImagesFromZip(reader *zip.ReadCloser) ([]MangaImagePage, error) {
-	imgs := make([]MangaImagePage, 0)
-	var allErrors error
+func NewChapter(reader *zip.ReadCloser) (Chapter, error) {
+	pages := make([]Page, 0)
+	group, _ := errgroup.WithContext(context.Background())
+	mutex := new(sync.Mutex)
 
-	for _, imageFile := range reader.File {
-		imgName := imageFile.FileInfo().Name()
-		imgExtension := strings.ToLower(filepath.Ext(imgName))
-		if !IsValidExtension(imgExtension) {
-			errors.Join(allErrors, fmt.Errorf("image [%s] have a unexpected image format", imgExtension))
-			continue
-		}
-		content, err := imageFile.Open()
-		if err != nil {
-			errors.Join(allErrors, fmt.Errorf("failed opening image [%s] with error: %w", imgName, err))
-			continue
-		}
+	for i := range reader.File {
+		index := i
+		group.Go(func() error {
+			mutex.Lock()
+			imageFile := reader.File[index]
+			mutex.Unlock()
+			imgName := imageFile.FileInfo().Name()
+			imgExtension := strings.ToLower(filepath.Ext(imgName))
+			if !IsValidExtension(imgExtension) {
+				return fmt.Errorf("image [%s] have a unexpected image format", imgExtension)
+			}
+			content, err := imageFile.Open()
+			if err != nil {
+				return fmt.Errorf("failed opening image [%s] with error: %w", imgName, err)
+			}
 
-		imgName = strings.TrimSuffix(imgName, imgExtension)
-		imgNameSplited := strings.Split(imgName, "_")
-		img := MangaImagePage{
-			Content:  content,
-			FileInfo: imageFile.FileInfo(),
-		}
-		img.PageNumber, err = strconv.Atoi(imgNameSplited[len(imgNameSplited)-1])
-		if err != nil {
-			errors.Join(allErrors, fmt.Errorf("couldn't extract page number from [%s]: %w", imgName, err))
-			continue
-		}
-
-		imgs = append(imgs, img)
+			imgName = strings.TrimSuffix(imgName, imgExtension)
+			imgNameSplited := strings.Split(imgName, "_")
+			page := Page{
+				Content:  content,
+				FileInfo: imageFile.FileInfo(),
+			}
+			page.PageNumber, err = strconv.Atoi(imgNameSplited[len(imgNameSplited)-1])
+			if err != nil {
+				return fmt.Errorf("couldn't extract page number from [%s]: %w", imgName, err)
+			}
+			mutex.Lock()
+			pages = append(pages, page)
+			mutex.Unlock()
+			return nil
+		})
 	}
 
-	return imgs, allErrors
+	return Chapter{Pages: pages}, group.Wait()
 }
 
 // IsValidExtension check if the image has a valid extension
