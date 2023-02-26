@@ -106,6 +106,17 @@ func TestGeneratePDFFromZip(t *testing.T) {
 
 		return file.Name()
 	}
+
+	createEmptyZip := func(t *testing.T) string {
+		file, err := ioutil.TempFile("/tmp/", "invalid-filename-*.zip")
+		assert.NoError(t, err)
+		defer file.Close()
+
+		zipWriter := zip.NewWriter(file)
+		defer zipWriter.Close()
+
+		return file.Name()
+	}
 	t.Run("NewChapter", func(t *testing.T) {
 		var tests = []struct {
 			name   string
@@ -150,6 +161,18 @@ func TestGeneratePDFFromZip(t *testing.T) {
 				name: "should return an error if the zip contains a file without the page number",
 				setup: func(t *testing.T) (*zip.ReadCloser, string) {
 					zipname := createZipWithoutIndexOnFilename(t)
+					r, err := zip.OpenReader(zipname)
+					assert.NoError(t, err)
+					return r, zipname
+				},
+				assert: func(t *testing.T, _ Chapter, gotErr error) {
+					assert.Error(t, gotErr)
+				},
+			},
+			{
+				name: "should return an error if the zip is empty",
+				setup: func(t *testing.T) (*zip.ReadCloser, string) {
+					zipname := createEmptyZip(t)
 					r, err := zip.OpenReader(zipname)
 					assert.NoError(t, err)
 					return r, zipname

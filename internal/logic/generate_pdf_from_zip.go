@@ -148,6 +148,10 @@ func NewChapter(reader *zip.ReadCloser) (Chapter, error) {
 	group, _ := errgroup.WithContext(context.Background())
 	mutex := new(sync.Mutex)
 
+	if len(reader.File) == 0 {
+		return Chapter{}, errors.New("empty zip")
+	}
+
 	for i := range reader.File {
 		index := i
 		group.Go(func() error {
