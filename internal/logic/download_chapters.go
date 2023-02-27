@@ -3,6 +3,7 @@ package logic
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 
@@ -27,6 +28,7 @@ func (l logic) DownloadChapters(ctx context.Context, mangaTerm string, outputPat
 			defer file.Close()
 
 			l.mangaFreakService.DownloadZip(ctx, chapterName, file)
+			log.Printf("Downloaded [%s] on [%s]", chapterName, outputFilepath)
 			return nil
 		})
 	}
