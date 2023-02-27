@@ -52,3 +52,8 @@ This script generates PDFs from a provided directory containing ZIP files with J
   -output_dir string
     	output directory that will contain generated PDFs
 ```
+
+# Testing
+```bash
+go test -cover -race ./...
+```
