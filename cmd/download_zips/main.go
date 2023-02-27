@@ -1,13 +1,14 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
-	"io"
 	"log"
-	"net/http"
 	"os"
-	"path/filepath"
+
+	"github.com/WendelHime/manga-toolkit/internal/logic"
+	"github.com/WendelHime/manga-toolkit/internal/services"
 )
 
 func main() {
@@ -28,37 +29,9 @@ func main() {
 
 	const endpoint = "https://images.mangafreak.net/downloads"
 
-	for i := fromChapter; i <= toChapter; i++ {
-		chapterName := fmt.Sprintf("%s_%d", mangaTerm, i)
-		chapterURL := fmt.Sprintf("%s/%s", endpoint, chapterName)
+	service := services.NewMangaFreakService(endpoint)
+	l := logic.NewLogic(service)
 
-		outputFilename := fmt.Sprintf("%s.zip", chapterName)
-		outputFilepath := filepath.Join(outputDir, outputFilename)
-
-		file, err := os.Create(outputFilepath)
-		if err != nil {
-			log.Fatal(err)
-		}
-		defer file.Close()
-
-		client := http.Client{
-			CheckRedirect: func(r *http.Request, _ []*http.Request) error {
-				r.URL.Opaque = r.URL.Path
-				return nil
-			},
-		}
-
-		resp, err := client.Get(chapterURL)
-		if err != nil {
-			log.Fatal(err)
-		}
-		defer resp.Body.Close()
-
-		size, err := io.Copy(file, resp.Body)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		log.Printf("Downloaded [%s] with size %d", outputFilepath, size)
-	}
+	err := l.DownloadChapters(context.Background(), mangaTerm, outputDir, fromChapter, toChapter)
+	log.Fatal(err)
 }
