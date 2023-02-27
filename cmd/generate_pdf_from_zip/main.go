@@ -2,6 +2,7 @@ package main
 
 import (
 	"archive/zip"
+	"context"
 	"flag"
 	"fmt"
 	"io/fs"
@@ -32,7 +33,7 @@ func main() {
 	}
 	flag.Parse()
 
-	l := logic.NewLogic()
+	l := logic.NewLogic(nil)
 
 	err := filepath.Walk(inputDir, func(path string, info fs.FileInfo, err error) error {
 		if err != nil {
@@ -66,7 +67,7 @@ func main() {
 		}
 		defer output.Close()
 
-		return l.GeneratePDFFromZip(zipReader, output)
+		return l.GeneratePDFFromZip(context.Background(), zipReader, output)
 	})
 	if err != nil {
 		log.Fatal(err)

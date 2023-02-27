@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
 	"image"
 	"image/jpeg"
@@ -191,13 +192,13 @@ func TestGeneratePDFFromZip(t *testing.T) {
 						os.Remove(zipname)
 					}
 				}()
-				chapter, err := NewChapter(input)
+				chapter, err := NewChapter(context.Background(), input)
 				tt.assert(t, chapter, err)
 			})
 		}
 	})
 	t.Run("GeneratePDFFromZip", func(t *testing.T) {
-		l := NewLogic()
+		l := NewLogic(nil)
 		var tests = []struct {
 			name   string
 			setup  func(t *testing.T) (*zip.ReadCloser, io.WriteCloser, string)
@@ -266,7 +267,7 @@ func TestGeneratePDFFromZip(t *testing.T) {
 						os.Remove(zipname)
 					}
 				}()
-				err := l.GeneratePDFFromZip(input, output)
+				err := l.GeneratePDFFromZip(context.Background(), input, output)
 				tt.assert(t, err)
 			})
 		}

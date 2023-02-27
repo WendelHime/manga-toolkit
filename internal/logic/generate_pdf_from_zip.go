@@ -20,7 +20,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-func (logic) GeneratePDFFromZip(reader *zip.ReadCloser, output io.WriteCloser) error {
+func (logic) GeneratePDFFromZip(ctx context.Context, reader *zip.ReadCloser, output io.WriteCloser) error {
 	if reader == nil {
 		return errors.New("missing reader")
 	}
@@ -28,7 +28,7 @@ func (logic) GeneratePDFFromZip(reader *zip.ReadCloser, output io.WriteCloser) e
 		return errors.New("missing output")
 	}
 
-	chapter, err := NewChapter(reader)
+	chapter, err := NewChapter(ctx, reader)
 	if err != nil {
 		return err
 	}
@@ -147,9 +147,9 @@ func (c Chapter) ForeachPage(do func(page Page) error) error {
 
 // NewChapter iterate through the ZIP file, open the content and return
 // a list of images. Remember to close the images after using it!
-func NewChapter(reader *zip.ReadCloser) (Chapter, error) {
+func NewChapter(ctx context.Context, reader *zip.ReadCloser) (Chapter, error) {
 	pages := make([]Page, 0)
-	group, _ := errgroup.WithContext(context.Background())
+	group, _ := errgroup.WithContext(ctx)
 	mutex := new(sync.Mutex)
 
 	if len(reader.File) == 0 {

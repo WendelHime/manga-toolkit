@@ -3,17 +3,23 @@ package logic
 
 import (
 	"archive/zip"
+	"context"
 	"io"
+
+	"github.com/WendelHime/manga-toolkit/internal/services"
 )
 
 // Logic abstracts the logic used on manga-toolkit
 type Logic interface {
-	GeneratePDFFromZip(reader *zip.ReadCloser, output io.WriteCloser) error
+	GeneratePDFFromZip(ctx context.Context, reader *zip.ReadCloser, output io.WriteCloser) error
+	DownloadChapters(ctx context.Context, mangaTerm string, outputDir string, fromChapter int, toChapter int) error
 }
 
-type logic struct{}
+type logic struct {
+	mangaFreakService services.MangaFreakService
+}
 
 // NewLogic builds the logic used on manga-toolkit
-func NewLogic() Logic {
-	return logic{}
+func NewLogic(mangaFreakService services.MangaFreakService) Logic {
+	return logic{mangaFreakService: mangaFreakService}
 }
